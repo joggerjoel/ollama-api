@@ -11,6 +11,13 @@ if [[ ! -d "$VENV_DIR" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
+  echo "Virtual environment is incomplete (missing bin/activate). Remove it and run ./setup.sh again:"
+  echo "  rm -rf $VENV_DIR"
+  echo "  ./setup.sh"
+  exit 1
+fi
+
 # shellcheck source=/dev/null
 source "$VENV_DIR/bin/activate"
 

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+# Do not run as root or with sudo (would create root-owned venv)
+if [[ $EUID -eq 0 ]] || [[ -n "${SUDO_UID:-}" ]]; then
+  echo "Do not run setup.sh as root or with sudo. Run it as your normal user."
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
