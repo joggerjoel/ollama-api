@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ollama API – Test prompt</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.25rem; margin-top: 0; color: #fff; }
+    label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; color: #a0a0a0; }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 0.75rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #252525;
+      color: #e0e0e0;
+      font-size: 0.9375rem;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #0a84ff;
+      box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.2);
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #252525;
+      color: #e0e0e0;
+      font-size: 0.9375rem;
+    }
+    .row { margin-bottom: 1rem; }
+    button {
+      padding: 0.6rem 1.25rem;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      background: #0a84ff;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:hover { background: #409cff; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #result {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      border-radius: 6px;
+      background: #252525;
+      border: 1px solid #333;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.875rem;
+    }
+    #result:empty { display: none; }
+    #result.loading { color: #a0a0a0; }
+    #result.error { border-color: #ff453a; background: #2a1515; color: #ff7b70; }
+    .meta { margin-top: 0.75rem; font-size: 0.75rem; color: #808080; }
+  </style>
+</head>
+<body>
+  <h1>Ollama API – Test prompt</h1>
+
+  <div class="row">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" placeholder="Enter your prompt…" autofocus></textarea>
+  </div>
+
+  <div class="row">
+    <label for="model">Model</label>
+    <input type="text" id="model" value="gpt-oss:20b" placeholder="gpt-oss:20b" />
+  </div>
+
+  <button type="button" id="submit">Generate</button>
+
+  <div id="result" role="status"></div>
+
+  <script>
+    const promptEl = document.getElementById('prompt');
+    const modelEl = document.getElementById('model');
+    const submitBtn = document.getElementById('submit');
+    const resultEl = document.getElementById('result');
+
+    function setResult(html, className = '') {
+      resultEl.innerHTML = html;
+      resultEl.className = className;
+    }
+
+    function formatDurationMs(ms) {
+      const s = ms / 1000;
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${sec.toFixed(3).padStart(6, '0')}`;
+      if (m > 0) return `${m}:${sec.toFixed(3).padStart(6, '0')}`;
+      return sec.toFixed(3);
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      const prompt = promptEl.value.trim();
+      if (!prompt) {
+        setResult('Enter a prompt.', 'error');
+        return;
+      }
+
+      const model = modelEl.value.trim() || 'gpt-oss:20b';
+      submitBtn.disabled = true;
+      setResult('Generating…', 'loading');
+
+      try {
+        const res = await fetch('/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, model }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setResult('Error: ' + (data.detail?.error || data.detail || res.status), 'error');
+          return;
+        }
+
+        const durationDisplay = data.duration_human ?? (data.duration_ms != null ? formatDurationMs(data.duration_ms) : '—');
+        const meta = `Started: ${data.start_time_human}\nUnix: ${data.start_time_unix}\nDuration: ${durationDisplay}`;
+        setResult((data.output || '(no output)') + '\n\n' + meta);
+      } catch (err) {
+        setResult('Request failed: ' + err.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
