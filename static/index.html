@@ -55,20 +55,43 @@
     }
     button:hover { background: #409cff; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
-    #result {
+    #output-area { display: none; }
+    #output-area.has-result { display: block; }
+    .tabs {
+      display: flex;
+      gap: 0;
       margin-top: 1.5rem;
+      border-bottom: 1px solid #333;
+    }
+    .tabs button {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      background: transparent;
+      color: #a0a0a0;
+      border: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      border-radius: 0;
+      cursor: pointer;
+    }
+    .tabs button:hover { color: #e0e0e0; }
+    .tabs button.active { color: #0a84ff; border-bottom-color: #0a84ff; }
+    .tab-panel {
+      display: none;
       padding: 1rem;
-      border-radius: 6px;
-      background: #252525;
       border: 1px solid #333;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      background: #252525;
       white-space: pre-wrap;
       word-break: break-word;
       font-size: 0.875rem;
+      min-height: 80px;
     }
-    #result:empty { display: none; }
-    #result.loading { color: #a0a0a0; }
-    #result.error { border-color: #ff453a; background: #2a1515; color: #ff7b70; }
-    .meta { margin-top: 0.75rem; font-size: 0.75rem; color: #808080; }
+    .tab-panel.active { display: block; }
+    .tab-panel.loading { color: #a0a0a0; }
+    .tab-panel.error { border-color: #ff453a; background: #2a1515; color: #ff7b70; }
+    .tabs + .tab-panel:first-of-type { border-radius: 0 0 6px 6px; }
   </style>
 </head>
 <body>
@@ -86,17 +109,61 @@
 
   <button type="button" id="submit">Generate</button>
 
-  <div id="result" role="status"></div>
+  <div id="output-area">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-human" aria-selected="true" aria-controls="panel-human">Output</button>
+      <button type="button" role="tab" id="tab-json" aria-selected="false" aria-controls="panel-json">JSON</button>
+    </div>
+    <div id="panel-human" class="tab-panel active" role="tabpanel" aria-labelledby="tab-human"></div>
+    <div id="panel-json" class="tab-panel" role="tabpanel" aria-labelledby="tab-json"></div>
+  </div>
 
   <script>
     const promptEl = document.getElementById('prompt');
     const modelEl = document.getElementById('model');
     const submitBtn = document.getElementById('submit');
-    const resultEl = document.getElementById('result');
+    const outputArea = document.getElementById('output-area');
+    const tabHuman = document.getElementById('tab-human');
+    const tabJson = document.getElementById('tab-json');
+    const panelHuman = document.getElementById('panel-human');
+    const panelJson = document.getElementById('panel-json');
 
-    function setResult(html, className = '') {
-      resultEl.innerHTML = html;
-      resultEl.className = className;
+    function showPanel(panel) {
+      panelHuman.classList.remove('active');
+      panelJson.classList.remove('active');
+      tabHuman.classList.remove('active');
+      tabJson.classList.remove('active');
+      tabHuman.setAttribute('aria-selected', 'false');
+      tabJson.setAttribute('aria-selected', 'false');
+      panel.classList.add('active');
+      const tab = panel === panelHuman ? tabHuman : tabJson;
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+    }
+
+    tabHuman.addEventListener('click', () => showPanel(panelHuman));
+    tabJson.addEventListener('click', () => showPanel(panelJson));
+
+    function setPanels(humanHtml, humanClass, jsonText, jsonClass) {
+      outputArea.classList.add('has-result');
+      panelHuman.innerHTML = humanHtml;
+      panelHuman.className = 'tab-panel active ' + (humanClass || '');
+      panelJson.textContent = jsonText;
+      panelJson.className = 'tab-panel ' + (jsonClass || '');
+      tabHuman.classList.add('active');
+      tabJson.classList.remove('active');
+      tabHuman.setAttribute('aria-selected', 'true');
+      tabJson.setAttribute('aria-selected', 'false');
+    }
+
+    function setError(message) {
+      outputArea.classList.add('has-result');
+      panelHuman.innerHTML = message;
+      panelHuman.className = 'tab-panel active error';
+      panelJson.textContent = '';
+      panelJson.className = 'tab-panel';
+      tabHuman.classList.add('active');
+      tabJson.classList.remove('active');
     }
 
     function formatDurationMs(ms) {
@@ -112,13 +179,19 @@
     submitBtn.addEventListener('click', async () => {
       const prompt = promptEl.value.trim();
       if (!prompt) {
-        setResult('Enter a prompt.', 'error');
+        setError('Enter a prompt.');
         return;
       }
 
       const model = modelEl.value.trim() || 'gpt-oss:20b';
       submitBtn.disabled = true;
-      setResult('Generating…', 'loading');
+      outputArea.classList.add('has-result');
+      panelHuman.textContent = 'Generating…';
+      panelHuman.className = 'tab-panel active loading';
+      panelJson.textContent = '';
+      panelJson.className = 'tab-panel';
+      tabHuman.classList.add('active');
+      tabJson.classList.remove('active');
 
       try {
         const res = await fetch('/generate', {
@@ -129,15 +202,19 @@
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          setResult('Error: ' + (data.detail?.error || data.detail || res.status), 'error');
+          const msg = 'Error: ' + (data.detail?.error || data.detail || res.status);
+          setError(msg);
+          panelJson.textContent = JSON.stringify(data, null, 2);
+          panelJson.classList.add('error');
           return;
         }
 
         const durationDisplay = data.duration_human ?? (data.duration_ms != null ? formatDurationMs(data.duration_ms) : '—');
         const meta = `Started: ${data.start_time_human}\nUnix: ${data.start_time_unix}\nDuration: ${durationDisplay}`;
-        setResult((data.output || '(no output)') + '\n\n' + meta);
+        const humanContent = (data.output || '(no output)') + '\n\n' + meta;
+        setPanels(humanContent, '', JSON.stringify(data, null, 2), '');
       } catch (err) {
-        setResult('Request failed: ' + err.message, 'error');
+        setError('Request failed: ' + err.message);
       } finally {
         submitBtn.disabled = false;
       }
